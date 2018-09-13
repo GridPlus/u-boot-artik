@@ -12,6 +12,8 @@
 #include <cli.h>
 #include <console.h>
 #include <version.h>
+#include <dm.h>
+#include <asm/gpio.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -53,6 +55,35 @@ static void run_preboot_environment_command(void)
 #endif /* CONFIG_PREBOOT */
 }
 
+static int toggle_led(const char* str_gpio) {
+	unsigned int gpio;
+	ulong value;
+	int ret;
+
+	/* Lookup the GPIO number based on the string */
+	ret = gpio_lookup_name(str_gpio, NULL, NULL, &gpio);
+	if (ret) {
+		printf("gpio: requesting pin %s (gpio %i) value failed\n", str_gpio, gpio);
+		return -1;
+	}
+	/* grab the pin before we tweak it */
+	ret = gpio_request(gpio, "cmd_gpio");
+	if (ret && ret != -EBUSY) {
+		printf("gpio: requesting pin %u failed\n", gpio);
+		return -1;
+	}
+
+	/* finally, let's do it: set direction and exec command */
+	value = !gpio_get_value(gpio);
+	gpio_direction_output(gpio, value);
+	printf("gpio: pin %s (gpio %i) value is %lu\n", str_gpio, gpio, value);
+
+	if (ret != -EBUSY)
+		gpio_free(gpio);
+
+	return value;
+}
+
 /* We come here after U-Boot is initialised and ready to process commands */
 void main_loop(void)
 {
@@ -78,6 +109,19 @@ void main_loop(void)
 #if defined(CONFIG_UPDATE_TFTP)
 	update_tftp(0UL, NULL, NULL);
 #endif /* CONFIG_UPDATE_TFTP */
+
+	const char* ARTIK_DEVBOARD_GPIO0_STRING = "gpio_e0";
+	const char* SEANs_GPIO_STRING = "gpio_d28";
+
+	printf("boot: toggling pin %s for boot indication\n", ARTIK_DEVBOARD_GPIO0_STRING);
+	printf("boot: toggling pin %s for boot indication\n", SEANs_GPIO_STRING);
+	for (int count = 0; count < 42; count++)
+	{
+		toggle_led(ARTIK_DEVBOARD_GPIO0_STRING);
+		toggle_led(SEANs_GPIO_STRING);
+		udelay(10000);
+	}
+
 
 	s = bootdelay_process();
 	if (cli_process_fdt(&s))
